@@ -1,0 +1,111 @@
+---
+title: "Gene regulatory network inference with TIGRESS"
+author: "Jean-Philippe Vert"
+date: "`r Sys.Date()`"
+output: 
+    rmarkdown::html_vignette:
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, fig.show='hold', fig.width=3.4, fig.height=3.4)
+set.seed(4395)
+library(ROCR)
+```
+
+
+## Introduction
+
+`tigress` implements the TIGRESS model of Haury et al. (2012) to infer a gene regulatory network from gene expression data. The inputs of `tigress` are a matrix of gene expression data, a list of known transcription factors among the genes, and a list target genes. The output is a scoring of all potential regulations from a transcription factor to a target gene. To obtain a gene regulatory network, one can just keep regulations with a score above a user-defined threshold.
+
+In this vignette we illustrate the use of `tigress` to reconstruct the gene regulatory network of the E. coli bacteria. Before we start, we need to load the `tigress` package:
+```{r}
+library(tigress)
+```
+
+## Data
+
+The `tigress` package comes with a dataset for E. coli, in the `ecoli` variable. `ecoli` is a list with two elements: `ecoli$exp` is a gene expression matrix (each row is a gene, each column an experiment), and `ecoli$reg` is a set of known regulations that we can use to assess the performance of TIGRESS and other methods for gene regulatory network inference.
+
+Let us first look at the gene expression matrix:
+```{r}
+dim(ecoli$exp)
+ecoli$exp[1:5,1:3]
+genenames <- rownames(ecoli$exp)
+```
+We also have a set of known regulatory interactions between transcription factors and their targets. It is stored in `ecoli$reg`, a matrix with two columns, where each row represents an interaction. The first column is the index of the transcription factor, the second column is the index of the target gene. Indices refer to the row number in the expression matrix.
+```{r}
+nreg <- nrow(ecoli$reg)
+ecoli$reg[1:5,]
+```
+From this known network we extract the names of TFs and targets, that we will try to recover using TIGRESS.
+```{r}
+tfindices <- sort(unique(ecoli$reg[,1]))
+tfnames <- genenames[tfindices]
+ntf <- length(tfindices)
+ntf
+targetindices <- sort(unique(ecoli$reg[,2]))
+targetnames <- genenames[targetindices]
+ntarget <- length(targetindices)
+ntarget
+```
+
+## Run TIGRESS
+To infer a gene network from a matrix of expression, we use the `tigress` function. We provide the expression matrix as `t(ecoli$exp)` to the `tigress` function, because `tigress` requires the genes in rows and not in colunms. We also provide the list of TFs and targets.
+
+In addition, `tigress` has basically three other parameters that you may want to change:
+* `nstepsLARS`, which controls the number of LARS steps performed during stability selection. It can impact the performance of the inference. WHile its default value is `5`, the optimal value for a given dataset is difficult to know in advance, as pointed out by Haury et al. (2012). If you have access to some known interactions then it is safe to test different values and pick the value that best predicts the interactions you know, as we do below. Note that by default, the `tigress` functions returns the predictions for all values of the number of LARS steps up to `nstepLARS`; this can be useful to plot the reconstruction performance as a function of `nstepLARS` without running `tigress` several times with different `nstepLARS` values, in order to pick the best value as we do below.
+* `alpha`, which controls the amount of multiplicative noise we add in the data during stability selection. It can also influence performance. However, as shown in Haury et al. (2012), the default value is often a safe choice.
+* `nsplit` is the number of times to repeat the random subsampling during stability selection. The larger the better! However it directly impact the time `tigress` will take to run. If you multiply `nsplit` by 2, then it will take twice longer to run. You should therefore take is as large as you can afford waiting.
+
+So let's give it a try with the default parameters, except for `nstepLARS` which we increase a bit to be able to explore more values than the default:
+```{r}
+nstepsLARS = 20
+edgepred <- tigress(t(ecoli$exp), tflist=tfnames, targetlist=targetnames, nstepsLARS = nstepsLARS)
+```
+The results is matrix where each row is a TF, each column is a candidate target gene, and the value in the matrix can be interpreted as a probability that there is a regulation between each TF and each target gene.
+
+To evaluate the performance of the prediction, we compare it to the known regulatory network.
+```{r}
+truereg <- matrix(0,ntf,ntarget)
+for (i in seq(nreg)) {
+	truereg[match(ecoli$reg[i,1],tfindices),match(ecoli$reg[i,2],targetindices)]=1
+	rownames(truereg) <- tfnames
+	colnames(truereg) <- targetnames
+}
+```
+Let us now measure the performance. We exclude self-regulation in the evaluation, since they are not predicted by TIGRESS.
+```{r}
+# Detect tf in targets
+tfintargets <- intersect(tfindices,targetindices)
+# Indices of the possible self-regulations (target=tf) in the tf*targets matrix
+selfregindices <- match(tfintargets,tfindices) + ntf*(match(tfintargets,targetindices)-1)
+keepindices <- setdiff(seq(ntf*ntarget), selfregindices)
+```
+Let us first check the influence of the number of LARS steps in the performance, for example on the AUC
+```{r}
+auc <- numeric(nstepsLARS)
+for (i in seq(nstepsLARS)) {
+  pred <- prediction(edgepred[[i]][keepindices], truereg[keepindices])
+  auc[i] <- performance(pred, measure = "auc")@y.values
+}
+plot(unlist(auc), xlab="Number of LARS steps", ylab="AUC", type='b', lwd=2, main="TIGRESS performance") ; grid()
+```
+
+This shows that the number of LARS steps has an influence on the performance, and in the E. coli case should not be taken too small. We can also visualize the ROC and precision-recall curve for a particular number of step size corresponding to the best AUC:
+```{r}
+bestL <- which.max(unlist(auc))
+pred <- prediction(edgepred[[bestL]][keepindices], truereg[keepindices])
+roc <- performance(pred, measure = "tpr", x.measure = "fpr")
+pre <- performance(pred, measure = "prec", x.measure = "rec") 
+plot(roc, lwd=2, main = paste("nstepsLARS =", bestL)); grid() ; abline(0,1)
+plot(pre, lwd=2, main = paste("nstepsLARS =", bestL)); grid()
+```
+
+We recover performance similar to Haury et al. (2012). In particular, the precision is good at the top of the list, but decreases quickly as soon as we go beyond a recall of 10%.
+
+## References
+A.-C. Haury, F. Mordelet, P. Vera-Licona and J.-P. Vert. [TIGRESS: trustful inference of gene regulation using stability selection](https://doi.org/10.1186/1752-0509-6-145). BMC systems biology 6(1), 145-153, 2012
