@@ -6,11 +6,11 @@ from scipy.spatial.distance import cdist
 from sklearn.decomposition import PCA
 
 
-def gene_ot(exp1: np.array, exp2: np.array, paired: bool = True,
+def double_ot(exp1: np.array, exp2: np.array, paired: bool = True,
             reg1: float = 0.05, reg2: float = 0.05) -> np.array:
     
     """
-    Implement the Gene OT method for inferring gene regulatory networks.
+    Implement the Double OT method for inferring gene regulatory networks.
     
     Parameters:
     exp1 : np.array
