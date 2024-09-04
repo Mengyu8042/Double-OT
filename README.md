@@ -1,4 +1,4 @@
-# OT for GRN Reconstruction with Unpaired Samples
+# Double OT for GRN Reconstruction with Unpaired Samples
 This repository contains the implementation of our work **"Double Optimal Transport for Gene Regulatory Network Reconstruction with Unpaired Samples"**.
 
 ## Introduction
@@ -9,6 +9,19 @@ This section provides a brief overview of the folders and files included in this
 * `double_ot.py`: Implementation of the proposed Double OT method.
 * `plot_utils.py`: Contains useful functions for plotting.
 * `utils.py`: Contains useful functions for data generation, processing, and result evaluation.
+
+## Requirements
+Python: 3.8.18
+
+To set up the environment, use the following commands to create and activate a Conda environment:
+
+    conda create -n newenv python=3.8
+    conda activate newenv
+
+Please install the necessary dependencies by running:
+    
+    pip install -r requirements.txt
+
 
 ## Reproducibility
 To reproduce the results presented in the manuscript (e.g., Figure 5), you can run `demo_w_competing.ipynb`. Please note that this script implements all the competing methods, so it will take several hours to complete. Additionally, it depends on the [MATLAB Engine](https://www.mathworks.com/help/matlab/matlab-engine-for-python.html) and the [Python-R bridge (rpy2)](https://rpy2.github.io/).
